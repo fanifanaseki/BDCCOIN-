@@ -1,2 +1,0 @@
-# BDCCOIN-
-BDC 

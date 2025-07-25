@@ -1,0 +1,452 @@
+app/
+│
+├── pubspec.yaml
+│
+└── lib/
+    ├── main.dart
+    └── src/
+        ├── app.dart
+        ├── router.dart
+        │
+        ├── core/
+        │   ├── mode/
+        │   │   └── mode_provider.dart
+        │   ├── theming/
+        │   │   └── color_sense.dart
+        │   ├── update/
+        │   │   └── update_manager.dart
+        │   ├── web3/
+        │   │   └── web3_provider.dart
+        │   └── security/
+        │       └── signature_verifier.dart
+        │
+        ├── features/
+        │   ├── lite/
+        │   │   └── lite_dashboard.dart
+        │   ├── pro/
+        │   │   └── pro_dashboard.dart
+        │   └── common/
+        │       ├── settings/
+        │       │   └── settings_screen.dart
+        │       ├── community/
+        │       │   └── community_screen.dart
+        │       ├── qr/
+        │       │   └── qr_screen.dart
+        │       └── updater/
+        │           └── self_update_screen.dart
+        │
+        └── widgets/
+            └── custom_button.dartname: bdccoin
+description: Fully decentralized BDCCOIN app (Lite/Pro) with self auto-update, blockchain support, HD UI.
+publish_to: "none"
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.3.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  web3dart: ^2.7.1
+  http: ^1.2.1
+  provider: ^6.0.5
+  qr_code_scanner: ^1.0.1
+  webview_flutter: ^4.7.0
+  crypto: ^3.0.3
+  flutter_secure_storage: ^9.0.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: trueimport 'package:flutter/material.dart';
+import 'src/app.dart';
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await AppBootstrap.init();
+  runApp(const BDCCoinApp());
+}import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'core/mode/mode_provider.dart';
+import 'core/theming/color_sense.dart';
+import 'core/update/update_manager.dart';
+import 'router.dart';
+import 'features/lite/lite_dashboard.dart';
+import 'features/pro/pro_dashboard.dart';
+
+class BDCCoinApp extends StatelessWidget {
+  const BDCCoinApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => ModeProvider()),
+        ChangeNotifierProvider(create: (_) => ColorSense()),
+        Provider(create: (_) => UpdateManager.instance),
+      ],
+      child: Consumer2<ModeProvider, ColorSense>(
+        builder: (_, mode, color, __) {
+          return MaterialApp(
+            title: 'BDCCOIN',
+            debugShowCheckedModeBanner: false,
+            theme: ThemeData.dark(useMaterial3: true),
+            home: mode.isPro ? const ProDashboard() : const LiteDashboard(),
+            onGenerateRoute: AppRouter.onGenerateRoute,
+          );
+        },
+      ),
+    );
+  }
+}
+
+class AppBootstrap {
+  static Future<void> init() async {
+    await UpdateManager.instance.bootstrap();
+  }
+}import 'package:flutter/material.dart';
+import 'features/common/settings/settings_screen.dart';
+import 'features/common/community/community_screen.dart';
+import 'features/common/qr/qr_screen.dart';
+import 'features/common/updater/self_update_screen.dart';
+
+class AppRouter {
+  static Route<dynamic> onGenerateRoute(RouteSettings settings) {
+    switch (settings.name) {
+      case SettingsScreen.route:
+        return MaterialPageRoute(builder: (_) => const SettingsScreen());
+      case CommunityScreen.route:
+        return MaterialPageRoute(builder: (_) => const CommunityScreen());
+      case QRScreen.route:
+        return MaterialPageRoute(builder: (_) => const QRScreen());
+      case SelfUpdateScreen.route:
+        return MaterialPageRoute(builder: (_) => const SelfUpdateScreen());
+      default:
+        return MaterialPageRoute(
+          builder: (_) => const SettingsScreen(),
+        );
+    }
+  }
+}import 'package:flutter/material.dart';
+
+class ModeProvider extends ChangeNotifier {
+  bool _pro = false;
+  bool get isPro => _pro;
+
+  void toggle() {
+    _pro = !_pro;
+    notifyListeners();
+  }
+}import 'package:flutter/material.dart';
+
+class ColorSense extends ChangeNotifier {
+  ColorScheme _scheme = const ColorScheme.dark(
+    primary: Color(0xFF00C853),
+    secondary: Color(0xFF00BFA5),
+    surface: Color(0xFF121212),
+    background: Color(0xFF0A0A0A),
+    onPrimary: Colors.white,
+    onSecondary: Colors.white,
+    onSurface: Colors.white,
+    onBackground: Colors.white,
+  );
+
+  ColorScheme get scheme => _scheme;
+}import '../web3/web3_provider.dart';
+import '../security/signature_verifier.dart';
+import 'package:web3dart/web3dart.dart';
+
+class UpdateManager {
+  UpdateManager._();
+  static final UpdateManager instance = UpdateManager._();
+
+  Future<void> bootstrap() async {
+    print("Connecting to RPC: ${Web3Provider.rpcUrl}");
+    final ethClient = Web3Provider.client;
+
+    final contract = DeployedContract(
+      ContractAbi.fromJson(_updateRegistryABI, "UpdateRegistry"),
+      Web3Provider.updateRegistryAddress,
+    );
+
+    final modules = contract.function('listModules');
+    final result = await ethClient.call(
+      contract: contract,
+      function: modules,
+      params: [],
+    );
+
+    print("Modules: $result");
+  }
+
+  static const _updateRegistryABI = '''
+  [
+    {"constant":true,"inputs":[],"name":"listModules","outputs":[{"name":"","type":"bytes32"}],"payable":false,"type":"function"}
+  ]
+  ''';
+}import 'package:http/http.dart' as http;
+import 'package:web3dart/web3dart.dart';
+
+class Web3Provider {
+  static const String rpcUrl = "https://mainnet.infura.io/v3/YOUR_PROJECT_ID";
+
+  static final Web3Client client = Web3Client(rpcUrl, http.Client());
+
+  static const String founder = "Mohammed Hasan Youzarsip";
+
+  static final EthereumAddress updateRegistryAddress = EthereumAddress.fromHex(
+    "0x0000000000000000000000000000000000000000"
+  );
+}import 'dart:typed_data';
+import 'package:crypto/crypto.dart';
+
+class SignatureVerifier {
+  static bool verifySHA256(Uint8List data, List<int> expectedHash) {
+    final actualHash = sha256.convert(data).bytes;
+    return _listEquals(actualHash, expectedHash);
+  }
+
+  static bool _listEquals(List<int> a, List<int> b) {
+    if (a.length != b.length) return false;
+    for (int i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
+}import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../../core/mode/mode_provider.dart';
+import '../common/settings/settings_screen.dart';
+
+class LiteDashboard extends StatelessWidget {
+  const LiteDashboard({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final mode = context.read<ModeProvider>();
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text("BDCCOIN Lite"),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.settings),
+            onPressed: () => Navigator.pushNamed(context, SettingsScreen.route),
+          ),
+        ],
+      ),
+      body: ListView(
+        padding: const EdgeInsets.all(12),
+        children: [
+          Card(
+            child: ListTile(
+              title: const Text("Balance"),
+              subtitle: const Text("৳ ..."),
+            ),
+          ),
+          const SizedBox(height: 12),
+          FilledButton(
+            onPressed: mode.toggle,
+            child: const Text("Switch to Pro"),
+          ),
+        ],
+      ),
+    );
+  }
+}import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../../core/mode/mode_provider.dart';
+import '../common/settings/settings_screen.dart';
+
+class ProDashboard extends StatelessWidget {
+  const ProDashboard({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final mode = context.read<ModeProvider>();
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text("BDCCOIN Pro"),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.settings),
+            onPressed: () => Navigator.pushNamed(context, SettingsScreen.route),
+          ),
+        ],
+      ),
+      body: ListView(
+        padding: const EdgeInsets.all(12),
+        children: [
+          Card(child: ListTile(title: const Text("Pro Features"))),
+          const SizedBox(height: 12),
+          FilledButton.tonal(
+            onPressed: mode.toggle,
+            child: const Text("Switch to Lite"),
+          ),
+        ],
+      ),
+    );
+  }
+}import 'package:flutter/material.dart';
+
+class SettingsScreen extends StatelessWidget {
+  static const route = '/settings';
+  const SettingsScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text("Settings")),
+      body: ListView(
+        children: const [
+          ListTile(title: Text("Theme")),
+          ListTile(title: Text("Language")),
+          ListTile(title: Text("Security")),
+        ],
+      ),
+    );
+  }
+}import 'package:flutter/material.dart';
+
+class CommunityScreen extends StatelessWidget {
+  static const route = '/community';
+  const CommunityScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text("Community Feed")),
+      body: ListView(
+        padding: const EdgeInsets.all(12),
+        children: [
+          Card(
+            elevation: 4,
+            child: ListTile(
+              title: const Text("User123 earned ৳450 today"),
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: const [
+                  Icon(Icons.thumb_up, size: 20),
+                  SizedBox(width: 4),
+                  Text(" 10"),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}import 'package:flutter/material.dart';
+import 'package:qr_code_scanner/qr_code_scanner.dart';
+
+class QRScreen extends StatefulWidget {
+  static const route = '/qr';
+  const QRScreen({super.key});
+
+  @override
+  State<QRScreen> createState() => _QRScreenState();
+}
+
+class _QRScreenState extends State<QRScreen> {
+  final GlobalKey qrKey = GlobalKey(debugLabel: 'QR');
+  QRViewController? controller;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text("Scan QR Code")),
+      body: QRView(
+        key: qrKey,
+        onQRViewCreated: _onQRViewCreated,
+      ),
+    );
+  }
+
+  void _onQRViewCreated(QRViewController controller) {
+    this.controller = controller;
+    controller.scannedDataStream.listen((scanData) {
+      Navigator.pop(context, scanData.code);
+    });
+  }
+
+  @override
+  void dispose() {
+    controller?.dispose();
+    super.dispose();
+  }
+}import 'package:flutter/material.dart';
+import '../../../core/update/update_manager.dart';
+
+class SelfUpdateScreen extends StatelessWidget {
+  static const route = '/update';
+  const SelfUpdateScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text("Auto Update")),
+      body: Center(
+        child: ElevatedButton(
+          onPressed: () async {
+            await UpdateManager.instance.bootstrap();
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text("Checking for updates...")),
+            );
+          },
+          child: const Text("Check for Updates"),
+        ),
+      ),
+    );
+  }
+}import 'package:flutter/material.dart';
+import 'package:webview_flutter/webview_flutter.dart';
+
+class TradingViewChart extends StatelessWidget {
+  const TradingViewChart({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return const SizedBox(
+      height: 300,
+      child: WebView(
+        initialUrl: 'https://www.tradingview.com/chart/?symbol=BDCCOINUSDT',
+        javascriptMode: JavascriptMode.unrestricted,
+      ),
+    );
+  }
+}import 'package:flutter/material.dart';
+
+class WalletScreen extends StatelessWidget {
+  const WalletScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      elevation: 4,
+      margin: const EdgeInsets.all(8),
+      child: ListTile(
+        title: const Text("BDCCOIN Balance", style: TextStyle(fontSize: 18)),
+        subtitle: const Text("৳ 10,000"),
+        trailing: IconButton(
+          icon: const Icon(Icons.qr_code),
+          onPressed: () {
+            Navigator.pushNamed(context, '/qr');
+          },
+        ),
+      ),
+    );
+  }
+}class TwitterService {
+  void postFridayAd() {
+    final today = DateTime.now();
+    if (today.weekday == DateTime.friday) {
+      final content =
+          "🔥 BDCCOIN – Earn, Trade, Secure! Use the safest crypto of the future. Join now!";
+      // TODO: টুইটার API ইন্টিগ্রেশন
+      print("Twitter Post: $content");
+    }
+  }
+}
