@@ -450,3 +450,6 @@ class WalletScreen extends StatelessWidget {
     }
   }
 }
+flutterfire configure
+flutter pub get
+flutter run
